@@ -2,12 +2,8 @@ import json
 import time
 import requests
 
-import undetected_chromedriver as uc
-
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 
 TOKEN = "8472437110:AAE86sPmyyXUpkIxDrCoMLrLOJc0--oLSi8"
 CHAT_ID = "380944998"
@@ -21,13 +17,13 @@ PAGINAS = 5
 
 def iniciar_driver():
 
-    options = uc.ChromeOptions()
+    options = Options()
 
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
 
-    driver = uc.Chrome(options=options)
+    driver = webdriver.Chrome(options=options)
 
     return driver
 
