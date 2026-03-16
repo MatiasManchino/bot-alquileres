@@ -26,6 +26,8 @@ def iniciar_driver():
     options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--window-size=1920,1080")
 
     driver = webdriver.Chrome(options=options)
 
@@ -48,9 +50,22 @@ def obtener_departamentos():
 
         wait = WebDriverWait(driver, 20)
 
-        wait.until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "li.ui-search-layout__item"))
-        )
+        try:
+            wait.until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "ol.ui-search-layout"))
+            )
+        except:
+            print("No cargó la página correctamente")
+            continue
+
+        time.sleep(3)
+
+        items = driver.find_elements(By.CSS_SELECTOR, "li.ui-search-layout__item")
+
+        if not items:
+            print("No se encontraron items en la página")
+            continue
+        
 
         items = driver.find_elements(By.CSS_SELECTOR, "li.ui-search-layout__item")
 
