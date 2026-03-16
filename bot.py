@@ -16,13 +16,13 @@ def obtener_departamentos():
     r = requests.get(URL, headers=headers)
     soup = BeautifulSoup(r.text, "html.parser")
 
-    items = soup.select(".ui-search-result")[:10]
+    items = soup.select("li.ui-search-layout__item")[:10]
 
     departamentos = []
 
     for item in items:
 
-        titulo = item.select_one(".ui-search-item__title")
+        titulo = item.select_one("a.poly-component__title")
 
         if titulo:
             link = titulo["href"]
