@@ -1,9 +1,11 @@
-import time
 import requests
+import time
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 
 TOKEN = "8472437110:AAE86sPmyyXUpkIxDrCoMLrLOJc0--oLSi8"
@@ -15,7 +17,7 @@ URL = "https://inmuebles.mercadolibre.com.ar/departamentos/alquiler/mas-de-2-amb
 def obtener_departamentos():
 
     options = Options()
-    options.add_argument("--headless")
+    options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
 
@@ -23,7 +25,12 @@ def obtener_departamentos():
 
     driver.get(URL)
 
-    time.sleep(5)
+    wait = WebDriverWait(driver, 20)
+
+    # esperar a que carguen los resultados
+    wait.until(
+        EC.presence_of_element_located((By.CSS_SELECTOR, "li.ui-search-layout__item"))
+    )
 
     items = driver.find_elements(By.CSS_SELECTOR, "li.ui-search-layout__item")
 
@@ -32,12 +39,9 @@ def obtener_departamentos():
     for item in items[:10]:
 
         try:
-
             titulo = item.find_element(By.CSS_SELECTOR, "a.poly-component__title")
-
             direccion = titulo.text
             link = titulo.get_attribute("href")
-
         except:
             continue
 
@@ -46,25 +50,20 @@ def obtener_departamentos():
         except:
             precio = "?"
 
-        try:
-            detalles = item.find_elements(By.CSS_SELECTOR, ".ui-search-card-attributes__attribute")
+        ambientes = "?"
+        m2 = "?"
 
-            ambientes = "?"
-            m2 = "?"
+        detalles = item.find_elements(By.CSS_SELECTOR, ".ui-search-card-attributes__attribute")
 
-            for d in detalles:
+        for d in detalles:
 
-                t = d.text.lower()
+            texto = d.text.lower()
 
-                if "amb" in t:
-                    ambientes = d.text
+            if "amb" in texto:
+                ambientes = d.text
 
-                if "m²" in t:
-                    m2 = d.text
-
-        except:
-            ambientes = "?"
-            m2 = "?"
+            if "m²" in texto:
+                m2 = d.text
 
         departamentos.append({
             "precio": precio,
