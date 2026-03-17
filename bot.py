@@ -1,76 +1,79 @@
-import requests
-from bs4 import BeautifulSoup
 import time
-import datetime
 import os
+from datetime import datetime
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
-# === CONFIGURACIÓN (cambiá solo si querés) ===
-TOKEN = "8472437110:AAE86sPmyyXUpkIxDrCoMLrLOJc0--oLSi8"   # ← tu token
-CHAT_ID = "380944998"                                      # ← tu chat ID
+# === CONFIGURACIÓN ===
+TOKEN = "8472437110:AAE86sPmyyXUpkIxDrCoMLrLOJc0--oLSi8"
+CHAT_ID = "380944998"
 URL = "https://inmuebles.mercadolibre.com.ar/departamentos/alquiler/mas-de-2-ambientes/capital-federal/barracas-o-palermo-o-palermo-chico-o-palermo-hollywood-o-palermo-soho-o-palermo-viejo-o-puerto-madero-o-retiro-o-recoleta-o-san-telmo-o-san-nicolas-o-monserrat-o-balvanera-o-almagro/alquiler_OrderId_PRICE_PriceRange_250000ARS-0ARS_NoIndex_True_TOTAL*AREA_50m%C2%B2-*"
 
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-    "Accept-Language": "es-AR,es;q=0.9",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-    "Referer": "https://www.mercadolibre.com.ar/",
-    "sec-ch-ua": '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
-}
+def iniciar_driver():
+    options = Options()
+    options.add_argument("--headless=new")           # sin ventana visible
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+    
+    # ←←← USAMOS TU PERFIL LOGUEADO DE CHROME (nunca más verificación)
+    options.add_argument(f"--user-data-dir={os.path.expanduser('~')}\\AppData\\Local\\Google\\Chrome\\User Data")
+    options.add_argument("--profile-directory=Default")   # perfil principal
+
+    driver = webdriver.Chrome(options=options)
+    return driver
 
 def obtener_departamentos():
-    for intento in range(3):  # 3 intentos por si hay lag
-        try:
-            r = requests.get(URL, headers=headers, timeout=15)
-            if r.status_code != 200:
-                time.sleep(2)
+    driver = iniciar_driver()
+    driver.get(URL)
+    
+    try:
+        wait = WebDriverWait(driver, 15)
+        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "li.ui-search-layout__item, .poly-component__title")))
+        time.sleep(4)  # dejar que cargue todo
+        
+        items = driver.find_elements(By.CSS_SELECTOR, "li.ui-search-layout__item")[:10]
+        
+        resultados = []
+        for item in items:
+            try:
+                titulo = item.find_element(By.CSS_SELECTOR, "a.poly-component__title")
+                direccion = titulo.text.strip()
+                link = titulo.get_attribute("href")
+                
+                precio = item.find_element(By.CSS_SELECTOR, ".andes-money-amount__fraction").text.replace(".", "")
+                
+                ambientes = "?"
+                m2 = "?"
+                for attr in item.find_elements(By.CSS_SELECTOR, ".poly-component__attributes span"):
+                    txt = attr.text.lower()
+                    if "amb" in txt: ambientes = attr.text
+                    if "m²" in txt or "m2" in txt: m2 = attr.text
+                
+                resultados.append({
+                    "precio": precio,
+                    "expensas": "0",
+                    "direccion": direccion,
+                    "ambientes": ambientes,
+                    "m2": m2,
+                    "link": link
+                })
+            except:
                 continue
                 
-            soup = BeautifulSoup(r.text, "html.parser")
-            
-            # Selectores actualizados 2026 (probados y robustos)
-            items = soup.select("li.ui-search-layout__item")[:10]
-            if not items:
-                items = soup.select(".ui-search-result")[:10]
-            
-            resultados = []
-            for item in items:
-                try:
-                    # Link y dirección
-                    titulo = item.select_one("a.poly-component__title") or item.select_one(".ui-search-item__title a")
-                    direccion = titulo.text.strip() if titulo else "Sin dirección"
-                    link = titulo["href"] if titulo else "#"
-                    
-                    # Precio alquiler
-                    precio_tag = item.select_one(".andes-money-amount__fraction")
-                    precio = precio_tag.text.strip().replace(".", "") if precio_tag else "?"
-                    
-                    # Expensas (casi nunca aparece en lista → 0)
-                    expensas = "0"
-                    
-                    # Ambientes y m²
-                    ambientes = "?"
-                    m2 = "?"
-                    for attr in item.select(".ui-search-card-attributes__attribute, .poly-component__attributes"):
-                        txt = attr.text.lower()
-                        if "amb" in txt:
-                            ambientes = attr.text.strip()
-                        if "m²" in txt or "m2" in txt:
-                            m2 = attr.text.strip()
-                    
-                    resultados.append({
-                        "precio": precio,
-                        "expensas": expensas,
-                        "direccion": direccion,
-                        "ambientes": ambientes,
-                        "m2": m2,
-                        "link": link
-                    })
-                except:
-                    continue
-            return resultados
-        except:
-            time.sleep(3)
-    return []
+    except Exception as e:
+        # ←←← CAPTURA AUTOMÁTICA CUANDO FALLA (para debug)
+        driver.save_screenshot(f"debug_ml_{datetime.now().strftime('%Y%m%d_%H%M')}.png")
+        print(f"Error capturado. Screenshot guardado: debug_ml_*.png")
+        driver.quit()
+        return []
+    
+    driver.quit()
+    return resultados
 
 def crear_mensaje(data):
     mensaje = "Buen día Mati, te paso los alquileres del día de hoy:\n\n"
@@ -80,16 +83,20 @@ def crear_mensaje(data):
     return mensaje
 
 def enviar_telegram(mensaje):
+    import requests
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     requests.post(url, data={"chat_id": CHAT_ID, "text": mensaje})
 
 def main():
     data = obtener_departamentos()
     if not data:
-        enviar_telegram("⚠️ No se encontraron departamentos hoy (ML puede estar temporalmente bloqueando). Volvé a probar mañana.")
+        enviar_telegram("⚠️ No se encontraron departamentos (ML mostró verificación). Screenshot guardado en la carpeta para que lo veas.")
         return
     msg = crear_mensaje(data)
     enviar_telegram(msg)
+
+if __name__ == "__main__":
+    main()
 
 if __name__ == "__main__":
     main()
