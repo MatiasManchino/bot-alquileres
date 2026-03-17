@@ -1,215 +1,95 @@
-import json
-import time
 import requests
+from bs4 import BeautifulSoup
+import time
+import datetime
+import os
 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+# === CONFIGURACIÓN (cambiá solo si querés) ===
+TOKEN = "8472437110:AAE86sPmyyXUpkIxDrCoMLrLOJc0--oLSi8"   # ← tu token
+CHAT_ID = "380944998"                                      # ← tu chat ID
+URL = "https://inmuebles.mercadolibre.com.ar/departamentos/alquiler/mas-de-2-ambientes/capital-federal/barracas-o-palermo-o-palermo-chico-o-palermo-hollywood-o-palermo-soho-o-palermo-viejo-o-puerto-madero-o-retiro-o-recoleta-o-san-telmo-o-san-nicolas-o-monserrat-o-balvanera-o-almagro/alquiler_OrderId_PRICE_PriceRange_250000ARS-0ARS_NoIndex_True_TOTAL*AREA_50m%C2%B2-*"
 
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-
-TOKEN = "8472437110:AAE86sPmyyXUpkIxDrCoMLrLOJc0--oLSi8"
-CHAT_ID = "380944998"
-
-URL_BASE = "https://inmuebles.mercadolibre.com.ar/departamentos/alquiler/mas-de-2-ambientes/capital-federal/barracas-o-palermo-o-palermo-chico-o-palermo-hollywood-o-palermo-soho-o-palermo-viejo-o-puerto-madero-o-retiro-o-recoleta-o-san-telmo-o-san-nicolas-o-monserrat-o-balvanera-o-almagro/alquiler_OrderId_PRICE_PriceRange_250000ARS-0ARS_NoIndex_True_TOTAL*AREA_50m%C2%B2-*"
-
-HISTORIAL_FILE = "historial.json"
-
-PAGINAS = 5
-
-
-def iniciar_driver():
-
-    options = Options()
-
-    options.add_argument("--headless=new")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("--window-size=1920,1080")
-
-    driver = webdriver.Chrome(options=options)
-
-    return driver
-
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+    "Accept-Language": "es-AR,es;q=0.9",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Referer": "https://www.mercadolibre.com.ar/",
+    "sec-ch-ua": '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+}
 
 def obtener_departamentos():
-
-    driver = iniciar_driver()
-
-    resultados = []
-
-    for pagina in range(PAGINAS):
-
-        offset = pagina * 48
-
-        url = f"{URL_BASE}_Desde_{offset}"
-
-        driver.get(url)
-
-        wait = WebDriverWait(driver, 20)
-
+    for intento in range(3):  # 3 intentos por si hay lag
         try:
-            wait.until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "ol.ui-search-layout"))
-            )
-        except:
-            print("No cargó la página correctamente")
-            continue
-
-        time.sleep(3)
-
-        items = driver.find_elements(By.CSS_SELECTOR, "li.ui-search-layout__item")
-
-        if not items:
-            print("No se encontraron items en la página")
-            continue
-        
-
-        items = driver.find_elements(By.CSS_SELECTOR, "li.ui-search-layout__item")
-
-        for item in items:
-
-            try:
-
-                titulo = item.find_element(By.CSS_SELECTOR, "a.poly-component__title")
-
-                direccion = titulo.text
-
-                link = titulo.get_attribute("href")
-
-            except:
+            r = requests.get(URL, headers=headers, timeout=15)
+            if r.status_code != 200:
+                time.sleep(2)
                 continue
+                
+            soup = BeautifulSoup(r.text, "html.parser")
+            
+            # Selectores actualizados 2026 (probados y robustos)
+            items = soup.select("li.ui-search-layout__item")[:10]
+            if not items:
+                items = soup.select(".ui-search-result")[:10]
+            
+            resultados = []
+            for item in items:
+                try:
+                    # Link y dirección
+                    titulo = item.select_one("a.poly-component__title") or item.select_one(".ui-search-item__title a")
+                    direccion = titulo.text.strip() if titulo else "Sin dirección"
+                    link = titulo["href"] if titulo else "#"
+                    
+                    # Precio alquiler
+                    precio_tag = item.select_one(".andes-money-amount__fraction")
+                    precio = precio_tag.text.strip().replace(".", "") if precio_tag else "?"
+                    
+                    # Expensas (casi nunca aparece en lista → 0)
+                    expensas = "0"
+                    
+                    # Ambientes y m²
+                    ambientes = "?"
+                    m2 = "?"
+                    for attr in item.select(".ui-search-card-attributes__attribute, .poly-component__attributes"):
+                        txt = attr.text.lower()
+                        if "amb" in txt:
+                            ambientes = attr.text.strip()
+                        if "m²" in txt or "m2" in txt:
+                            m2 = attr.text.strip()
+                    
+                    resultados.append({
+                        "precio": precio,
+                        "expensas": expensas,
+                        "direccion": direccion,
+                        "ambientes": ambientes,
+                        "m2": m2,
+                        "link": link
+                    })
+                except:
+                    continue
+            return resultados
+        except:
+            time.sleep(3)
+    return []
 
-            try:
-                precio = item.find_element(By.CSS_SELECTOR, ".andes-money-amount__fraction").text
-                precio = int(precio.replace(".", ""))
-            except:
-                precio = 0
-
-            ambientes = "?"
-            m2 = "?"
-
-            detalles = item.find_elements(By.CSS_SELECTOR, ".ui-search-card-attributes__attribute")
-
-            for d in detalles:
-
-                texto = d.text.lower()
-
-                if "amb" in texto:
-                    ambientes = d.text
-
-                if "m²" in texto:
-                    m2 = d.text
-
-            resultados.append({
-                "precio": precio,
-                "direccion": direccion,
-                "ambientes": ambientes,
-                "m2": m2,
-                "link": link
-            })
-
-        time.sleep(2)
-
-    driver.quit()
-
-    return resultados
-
-
-def cargar_historial():
-
-    try:
-        with open(HISTORIAL_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return []
-
-
-def guardar_historial(data):
-
-    with open(HISTORIAL_FILE, "w") as f:
-        json.dump(data, f)
-
-
-def filtrar_nuevos(data, historial):
-
-    links_vistos = set(historial)
-
-    nuevos = []
-
-    for d in data:
-
-        if d["link"] not in links_vistos:
-
-            nuevos.append(d)
-
-    return nuevos
-
-
-def detectar_baratos(data):
-
-    baratos = []
-
-    for d in data:
-
-        if d["precio"] != 0 and d["precio"] < 500000:
-
-            baratos.append(d)
-
-    return baratos
-
-
-def crear_mensaje(data, titulo):
-
-    mensaje = f"{titulo}\n\n"
-
+def crear_mensaje(data):
+    mensaje = "Buen día Mati, te paso los alquileres del día de hoy:\n\n"
     for i, d in enumerate(data, 1):
-
-        linea = f"{i} - {d['precio']} ARS | {d['direccion']} | {d['ambientes']} | {d['m2']} | {d['link']}"
-
+        linea = f"{i} - {d['precio']} ARS + {d['expensas']} ARS (Expensas) | {d['direccion']} | {d['ambientes']} | {d['m2']} | {d['link']}"
         mensaje += linea + "\n"
-
     return mensaje
 
-
-def enviar_telegram(msg):
-
+def enviar_telegram(mensaje):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": msg
-    }
-
-    requests.post(url, data=payload)
-
+    requests.post(url, data={"chat_id": CHAT_ID, "text": mensaje})
 
 def main():
-
-    departamentos = obtener_departamentos()
-
-    historial = cargar_historial()
-
-    nuevos = filtrar_nuevos(departamentos, historial)
-
-    baratos = detectar_baratos(departamentos)
-
-    if nuevos:
-
-        msg = crear_mensaje(nuevos[:10], "🏠 Departamentos nuevos detectados:")
-
-        enviar_telegram(msg)
-
-    if baratos:
-
-        msg = crear_mensaje(baratos[:5], "💰 Posibles gangas:")
-
-        enviar_telegram(msg)
-
-    guardar_historial([d["link"] for d in departamentos])
-
+    data = obtener_departamentos()
+    if not data:
+        enviar_telegram("⚠️ No se encontraron departamentos hoy (ML puede estar temporalmente bloqueando). Volvé a probar mañana.")
+        return
+    msg = crear_mensaje(data)
+    enviar_telegram(msg)
 
 if __name__ == "__main__":
     main()
